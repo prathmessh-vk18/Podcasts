@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Tangent · Discover</title>
+  <meta name="description" content="Clickable prototype: discover learning-focused podcast episodes across services, curate them, and export to your listening app.">
+  <link rel="preconnect" href="https://is1-ssl.mzstatic.com">
+  <meta name="theme-color" content="#0b0a10">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0a10'/%3E%3Ccircle cx='14' cy='18' r='8' fill='none' stroke='%23efeaff' stroke-width='2.4'/%3E%3Cpath d='M5 10h22' stroke='%238b6cff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400..700&family=Google+Sans+Flex:opsz,wdth,wght@6..144,25..151,100..1000&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="#/" class="brand-link" id="brand-slot" aria-label="Tangent home"></a>
+      <nav class="nav-tabs" aria-label="Primary">
+        <span class="nav-pill" aria-hidden="true"></span>
+        <a href="#/" data-nav="discover">Discover</a>
+        <a href="#/topics" data-nav="topics">Topics</a>
+        <a href="#/library" data-nav="library">Library <span class="nav-badge" hidden>0</span></a>
+      </nav>
+      <div class="topbar-right">
+        <a class="icon-btn" href="#/" aria-label="Search" data-focus-search onclick="setTimeout(()=>{const q=document.getElementById('q');q&&q.focus()},350)"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm10 2-4.35-4.35"/></svg></a>
+        <span class="avatar" title="Signed in (prototype)" aria-label="Your account">Y</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1"></main>
+
+  <nav class="tabbar" aria-label="Primary (mobile)">
+    <a href="#/" data-nav="discover"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg><span>Discover</span></a>
+    <a href="#/topics" data-nav="topics"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="7" r="2"/><circle cx="12" cy="14" r="2.5"/><circle cx="5" cy="19" r="1.5"/><path d="m7.6 7.2 3 5M16.6 8.5l-3 4M10 15.8l-3.6 2.4"/></svg><span>Topics</span></a>
+    <a href="#/library" data-nav="library"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16M9 4v16M14 5l5 14.5"/></svg><span>Library</span><span class="nav-badge" hidden>0</span></a>
+  </nav>
+
+  <button class="proto-toggle" id="proto-toggle" aria-expanded="false" aria-controls="proto-panel">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10m4 0h2M4 12h4m4 0h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+    <span>Prototype</span>
+  </button>
+  <div id="proto-slot"></div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div id="live" class="sr-only" aria-live="assertive"></div>
+
+  <script src="js/catalog.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/art.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/collection.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
