@@ -1,40 +1,42 @@
-# Tangent: clickable prototype
+# Tangent
 
-A high-fidelity prototype of the cross-platform podcast discovery and learning library, built from the PRD (October 2026). It's meant for the week-2 usability tests.
+Cross-platform podcast discovery and learning library: find episodes on any service, organise them into collections, and export those collections to a supported listening app.
 
-## Open it
+This repository has two parts:
 
-Double-click `index.html`. You don't need to install or build anything. Fonts load from Google Fonts, so you need to be online for the full look.
+| Path                     | What it is                                                                                                |
+| ------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `apps/api`, `packages/*` | **The production backend (step 1).** Real provider integrations, matching, account connection and export. |
+| `prototype/`             | The clickable design prototype. Static HTML: open `prototype/index.html`.                                 |
 
-## Test journeys (from PRD §5)
+## Quick start
 
-1. **Discover → save:** search or browse the trending rail, open an episode, and save it to a collection.
-2. **Topic → bulk add → reorder:** open a topic, tick several episodes, add them to a collection, then drag to reorder.
-3. **Export:** collection → Export → Spotify → connect → watch the matching → review uncertain matches → confirm → retry the failed item.
-4. **Shared collection:** share a collection from its page, preview the read-only shared page, then copy it to your library or copy the source links.
+Requires Node.js 22.12 or later. No database or Docker needed locally: the API uses embedded Postgres (PGlite) when `DATABASE_URL` is empty.
 
-The **Prototype** button (bottom-left on desktop, top bar on phones) jumps to each journey. It also toggles reduced motion, turns the simulated export failure on or off, and resets the demo data.
-
-## What's real and what's simulated
-
-- **Real:** 31 learning podcasts and 298 recent episodes (titles, descriptions, durations, dates, cover art, Apple links), pulled from the public iTunes Search API into `js/catalog.js`. Cover images load from Apple's CDN, so you need to be online.
-- **Simulated:** which service each episode was "found on", popularity numbers, and match results. These are generated so every state appears: exact, likely, needs review, not found and duplicate.
-- **Open** buttons go to the real Apple Podcasts page, or a YouTube / Spotify search for the episode.
-- Account connection and export are simulated. Nothing calls Spotify or YouTube.
-- Apple Podcasts goes to the link-list fallback and is never labelled as a transfer.
-- Your changes are kept in the browser's localStorage. Use **Reset demo data** to start again.
-
-## Structure
-
+```bash
+npm install
+cp .env.example .env      # optional: add Spotify / YouTube credentials to enable them
+npm run dev               # API on http://localhost:4000
 ```
-index.html          shell, nav, script order
-css/styles.css      tokens (colour, type, motion), components, pages, responsive
-js/catalog.js       real shows + episodes (generated from the iTunes Search API)
-js/data.js          topics, simulated sources/metrics/matches, seed collections
-js/art.js           cover images and collection mosaics
-js/core.js          state, helpers, toasts, modal, episode drawer, save popover
-js/views.js         Discover (hero, trending, masonry feed), Topics, Topic, Library
-js/collection.js    playlist canvas (drag sort), cover builder, share, shared page
-js/export.js        export journey
-js/app.js           router, hero wave field, tilt, global events
+
+Apple Podcasts search works with no credentials. Spotify and YouTube switch on when you add their keys to `.env`; without them, those platforms report `provider_not_configured` and everything else keeps working.
+
+```bash
+curl "http://localhost:4000/v1/search?q=hidden%20brain&platforms=apple"
 ```
+
+## Scripts
+
+| Command                              | Does                                                        |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `npm run dev`                        | API with reload                                             |
+| `npm test`                           | All tests (unit, adapter, database, API end-to-end)         |
+| `npm run typecheck` / `npm run lint` | Static checks                                               |
+| `npm run check`                      | Typecheck, lint and test (run before pushing)               |
+| `npm run build` then `npm start`     | Production bundle in `apps/api/dist`                        |
+| `npm run db:generate`                | New SQL migration after editing `packages/db/src/schema.ts` |
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the system fits together, the edge cases it handles, and the API reference.
+- [docs/PLATFORM_NOTES.md](docs/PLATFORM_NOTES.md): what each platform allows, what we verified, and what's still open.

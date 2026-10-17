@@ -1,0 +1,22 @@
+{
+  "name": "@tangent/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Postgres schema, migrations and repositories (Drizzle). PGlite locally, Postgres in production.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@tangent/core": "*",
+    "@electric-sql/pglite": "^0.3.4",
+    "drizzle-orm": "^0.44.2",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.4"
+  }
+}

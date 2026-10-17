@@ -1,0 +1,10 @@
+{
+  "name": "@tangent/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure domain logic: episode model, text normalisation, matching, export planning.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@tangent/providers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Adapters for Apple (iTunes), RSS, Spotify and YouTube behind common interfaces.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@tangent/core": "*",
+    "fast-xml-parser": "^5.2.5"
+  }
+}
