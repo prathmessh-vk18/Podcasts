@@ -82,6 +82,20 @@ export async function buildApp(
   await app.register(cookie, { secret: config.sessionSecret });
   await app.register(rateLimit, { global: true, max: 300, timeWindow: '1 minute' });
 
+  // Action endpoints (execute, retry, cancel) take no body, but clients often still send the JSON
+  // content type. Treat an empty JSON body as {} instead of rejecting the request.
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const text = typeof body === 'string' ? body : body.toString('utf8');
+    if (text.trim() === '') return done(null, {});
+    try {
+      done(null, JSON.parse(text));
+    } catch {
+      const err = Object.assign(new Error('Request body is not valid JSON'), { statusCode: 400 });
+      done(err, undefined);
+    }
+  });
+
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((req, reply) =>
     reply.status(404).send({

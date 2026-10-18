@@ -73,7 +73,11 @@ function decodeKey(name: string, value: string): Buffer {
 }
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = schema.safeParse(source);
+  // `KEY=` in a .env file means "not set" (the template ships with empty lines), not an empty value.
+  const cleaned = Object.fromEntries(
+    Object.entries(source).filter(([, v]) => v !== undefined && v.trim() !== ''),
+  );
+  const parsed = schema.safeParse(cleaned);
   if (!parsed.success) {
     const lines = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new Error(`Invalid configuration:\n${lines}`);

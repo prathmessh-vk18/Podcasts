@@ -112,6 +112,24 @@ describe('platform basics', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('accepts action calls with a JSON content type and no body, and rejects malformed JSON', async () => {
+    const c = client();
+    await c.call('GET', '/v1/collections');
+    const empty = await app.inject({
+      method: 'POST',
+      url: '/v1/exports/00000000-0000-4000-8000-000000000000/cancel',
+      headers: { cookie: c.cookie, 'x-tangent-csrf': '1', 'content-type': 'application/json' },
+    });
+    expect(empty.statusCode).toBe(404); // reached the handler (export not found), not a 400 body error
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/v1/collections',
+      payload: '{oops',
+      headers: { cookie: c.cookie, 'x-tangent-csrf': '1', 'content-type': 'application/json' },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
   it('validates input and reports field errors', async () => {
     const res = await client().call('POST', '/v1/collections', { name: '   ' });
     expect(res.statusCode).toBe(400);
