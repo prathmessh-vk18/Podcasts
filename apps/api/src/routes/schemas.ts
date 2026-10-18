@@ -19,6 +19,17 @@ export const searchQuery = z.object({
   limit: z.coerce.number().int().min(1).max(25).default(10),
 });
 
+export const feedQuery = z.object({
+  topic: z
+    .string()
+    .regex(/^[a-z]{2,24}$/, 'Unknown topic')
+    .optional(),
+  cursor: z.string().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(24),
+});
+
+export const trendingQuery = z.object({ limit: z.coerce.number().int().min(1).max(30).default(16) });
+
 export const episodeRef = z
   .object({
     platform,

@@ -6,3 +6,7 @@ coverage/
 .env
 .env.*
 !.env.example
+.next/
+.vercel/
+*.tsbuildinfo
+*.local.txt

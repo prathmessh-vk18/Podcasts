@@ -4,8 +4,12 @@ import { loadConfig } from './config.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const db = await openDb({ url: config.DATABASE_URL, dataDir: config.PGLITE_DIR });
-  const { app, exports } = await buildApp({ config, db });
+  const db = await openDb({
+    url: config.DATABASE_URL,
+    dataDir: config.PGLITE_DIR,
+    migrate: config.autoMigrate,
+  });
+  const { app, exports, discover } = await buildApp({ config, db });
 
   for (const w of config.warnings) app.log.warn(w);
   app.log.info({ driver: db.driver }, 'database ready');
@@ -14,6 +18,14 @@ async function main(): Promise<void> {
   if (resumed) app.log.info({ resumed }, 'resumed interrupted export jobs');
 
   await app.listen({ host: config.HOST, port: config.PORT });
+
+  // Long-running mode: keep Discover fresh without a cron (serverless uses /internal/cron instead).
+  const refreshCatalog = () =>
+    discover
+      .refresh(10 * 60_000)
+      .catch((err) => app.log.error({ err: (err as Error).message }, 'catalog refresh failed'));
+  void refreshCatalog();
+  setInterval(refreshCatalog, 30 * 60_000).unref();
 
   // Graceful shutdown: stop taking requests, let running jobs finish (bounded), close the DB.
   let stopping = false;

@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "build": "tsup",
-    "start": "node --env-file-if-exists=../../.env dist/main.js"
+    "start": "node --env-file-if-exists=../../.env dist/main.js",
+    "vercel-build": "tsx src/migrate.ts && node scripts/build-vercel.mjs",
+    "db:migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts",
+    "catalog:refresh": "tsx --env-file-if-exists=../../.env src/refresh-catalog.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.4",
@@ -17,11 +20,18 @@
     "@tangent/core": "*",
     "@tangent/db": "*",
     "@tangent/providers": "*",
-    "drizzle-orm": "^0.44.2",
+    "@vercel/functions": "^2.2.13",
+    "drizzle-orm": "^0.45.4",
     "fast-xml-parser": "^5.2.5",
     "fastify": "^5.4.0",
     "pino": "^9.7.0",
     "postgres": "^3.4.7",
     "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
+    "typescript": "~5.8.3"
   }
 }

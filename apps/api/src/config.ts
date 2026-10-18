@@ -37,6 +37,13 @@ const schema = z
     YOUTUBE_REGION: z.string().length(2).default('US'),
     YOUTUBE_DAILY_QUOTA: z.coerce.number().int().positive().default(10_000),
 
+    /** Where the API runs. Auto-detected on Vercel; override for tests. */
+    RUNTIME: z.enum(['server', 'serverless']).optional(),
+    /** Bearer secret Vercel Cron sends to /internal/cron. Required for the cron endpoint to work. */
+    CRON_SECRET: z.string().min(16).optional(),
+    /** Run migrations when the app opens the database. Off on serverless: migrations run at build time. */
+    DB_AUTO_MIGRATE: z.enum(['true', 'false']).optional(),
+
     MATCH_CACHE_DAYS: z.coerce.number().positive().default(7),
     /** Max export jobs processed at once by this instance. */
     JOB_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
@@ -60,6 +67,8 @@ const schema = z
 export type Env = z.infer<typeof schema>;
 
 export interface Config extends Env {
+  runtime: 'server' | 'serverless';
+  autoMigrate: boolean;
   sessionSecret: string;
   encryptionKeys: { current: Buffer; old: Buffer[] };
   isProd: boolean;
@@ -107,8 +116,15 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   else if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET)
     warnings.push('YouTube export is disabled: GOOGLE_CLIENT_ID/SECRET not set');
 
+  const runtime = env.RUNTIME ?? (source.VERCEL ? 'serverless' : 'server');
+  const autoMigrate = env.DB_AUTO_MIGRATE ? env.DB_AUTO_MIGRATE === 'true' : runtime === 'server';
+  if (runtime === 'serverless' && !env.CRON_SECRET)
+    warnings.push('CRON_SECRET not set: the cron endpoint is disabled');
+
   return {
     ...env,
+    runtime,
+    autoMigrate,
     sessionSecret,
     encryptionKeys: { current, old },
     isProd: env.NODE_ENV === 'production',

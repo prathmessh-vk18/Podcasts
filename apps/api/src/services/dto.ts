@@ -121,3 +121,8 @@ export function exportDto(
     finishedAt: job.finishedAt?.toISOString() ?? null,
   };
 }
+
+/** Placeholder artwork until a show's first refresh has fetched its cover. */
+export function artworkForTopic(): string | null {
+  return null;
+}

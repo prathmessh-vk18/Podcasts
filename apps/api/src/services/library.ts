@@ -101,8 +101,18 @@ export class LibraryService {
   }
 
   // ------------------------------------------------------------- collections
+  /** Map of "platform:sourceId" → collection ids, so the UI can mark saved episodes anywhere. */
+  async saved(userId: string) {
+    const rows = await this.repos.collections.savedRefs(userId);
+    const map: Record<string, string[]> = {};
+    for (const r of rows) (map[`${r.platform}:${r.sourceId}`] ??= []).push(r.collectionId);
+    return { saved: map };
+  }
+
   async listCollections(userId: string) {
-    return (await this.repos.collections.list(userId)).map(collectionDto);
+    const rows = await this.repos.collections.list(userId);
+    const previews = await this.repos.collections.previews(rows.map((r) => r.id));
+    return rows.map((r) => ({ ...collectionDto(r), preview: previews.get(r.id) ?? [] }));
   }
 
   private async owned(userId: string, id: string) {

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { ExportItemError, ExportJobStatus, PlanItem, Platform } from '@tangent/core';
 import type { Db } from '../client.js';
 import { exportItems, exportJobs, quotaUsage } from '../schema.js';
@@ -199,6 +199,45 @@ export function exportsRepo(db: Db) {
     /** Jobs left "running" by a crash or deploy; resumed on boot. */
     async listRunning(): Promise<ExportJobRow[]> {
       return db.select().from(exportJobs).where(eq(exportJobs.status, 'running'));
+    },
+
+    /**
+     * Take the worker lease if nobody holds a live one. Returns false if another worker owns
+     * the job right now, in which case the caller must not touch it.
+     */
+    async claim(id: string, now: Date, leaseMs: number): Promise<boolean> {
+      const rows = await db
+        .update(exportJobs)
+        .set({ leaseUntil: new Date(now.getTime() + leaseMs) })
+        .where(and(eq(exportJobs.id, id), or(isNull(exportJobs.leaseUntil), lt(exportJobs.leaseUntil, now))))
+        .returning({ id: exportJobs.id });
+      return rows.length > 0;
+    },
+
+    /** Extend a lease we hold, while a long job keeps making progress. */
+    async extendLease(id: string, now: Date, leaseMs: number): Promise<void> {
+      await db
+        .update(exportJobs)
+        .set({ leaseUntil: new Date(now.getTime() + leaseMs) })
+        .where(eq(exportJobs.id, id));
+    },
+
+    async releaseLease(id: string): Promise<void> {
+      await db.update(exportJobs).set({ leaseUntil: null }).where(eq(exportJobs.id, id));
+    },
+
+    /** Work left behind by a worker that stopped (expired or missing lease). */
+    async listResumable(now: Date, limit = 20): Promise<ExportJobRow[]> {
+      return db
+        .select()
+        .from(exportJobs)
+        .where(
+          and(
+            inArray(exportJobs.status, ['planning', 'running']),
+            or(isNull(exportJobs.leaseUntil), lt(exportJobs.leaseUntil, now)),
+          ),
+        )
+        .limit(limit);
     },
 
     async listByStatus(statuses: ExportJobStatus[]): Promise<ExportJobRow[]> {

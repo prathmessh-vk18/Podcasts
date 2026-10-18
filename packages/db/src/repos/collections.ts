@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, isNull, isNotNull, max, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, isNotNull, max, sql } from 'drizzle-orm';
 import { DomainError } from '@tangent/core';
 import type { Db } from '../client.js';
 import { collectionItems, collections, episodes } from '../schema.js';
@@ -68,6 +68,47 @@ export function collectionsRepo(db: Db) {
         .where(and(eq(collections.id, id), eq(collections.userId, userId), isNotNull(collections.deletedAt)))
         .returning();
       return row ?? null;
+    },
+
+    /** First few episodes' artwork per collection, in listening order (for cover mosaics). One query. */
+    async previews(
+      collectionIds: string[],
+      perCollection = 4,
+    ): Promise<Map<string, Array<{ artworkUrl: string | null; show: string }>>> {
+      const out = new Map<string, Array<{ artworkUrl: string | null; show: string }>>();
+      if (collectionIds.length === 0) return out;
+      const rows = await db
+        .select({
+          collectionId: collectionItems.collectionId,
+          artworkUrl: episodes.artworkUrl,
+          show: episodes.showTitle,
+        })
+        .from(collectionItems)
+        .innerJoin(episodes, eq(episodes.id, collectionItems.episodeId))
+        .where(inArray(collectionItems.collectionId, collectionIds))
+        .orderBy(asc(collectionItems.collectionId), asc(collectionItems.position));
+      for (const r of rows) {
+        const list = out.get(r.collectionId) ?? [];
+        if (list.length < perCollection * 3) list.push({ artworkUrl: r.artworkUrl, show: r.show });
+        out.set(r.collectionId, list);
+      }
+      return out;
+    },
+
+    /** Every saved episode reference for a user, with the collections it's in (for "saved" ticks). */
+    async savedRefs(
+      userId: string,
+    ): Promise<Array<{ platform: string; sourceId: string; collectionId: string }>> {
+      return db
+        .select({
+          platform: episodes.sourcePlatform,
+          sourceId: episodes.sourceEpisodeId,
+          collectionId: collections.id,
+        })
+        .from(collectionItems)
+        .innerJoin(collections, eq(collections.id, collectionItems.collectionId))
+        .innerJoin(episodes, eq(episodes.id, collectionItems.episodeId))
+        .where(and(eq(collections.userId, userId), isNull(collections.deletedAt)));
     },
 
     async items(collectionId: string): Promise<Array<{ item: CollectionItemRow; episode: EpisodeRow }>> {

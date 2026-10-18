@@ -5,14 +5,14 @@ import { openDb, schema, type DbHandle } from '@tangent/db';
 import { eq } from 'drizzle-orm';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import type { JobQueue } from '../src/jobs/queue.js';
+import type { JobRunner } from '../src/jobs/runner.js';
 import type { ExportService } from '../src/services/exports.js';
 import { ProviderRegistry } from '../src/services/registry.js';
 import { ep, FakeCatalog, FakeDestination } from './fakes.js';
 
 let db: DbHandle;
 let app: FastifyInstance;
-let queue: JobQueue;
+let queue: JobRunner;
 let exportsSvc: ExportService;
 let apple: FakeCatalog;
 let spotifyCatalog: FakeCatalog;
@@ -199,6 +199,15 @@ describe('collections', () => {
     expect((await c.call('GET', `/v1/collections/${col.id}`)).statusCode).toBe(404);
     expect((await c.call('POST', `/v1/collections/${col.id}/restore`)).statusCode).toBe(200);
     expect((await c.call('GET', `/v1/collections/${col.id}`)).json().items).toHaveLength(2);
+  });
+
+  it('reports which episodes are saved and where', async () => {
+    const c = client();
+    const col = await seedCollection(c, ['a1', 'a2']);
+    const { saved } = (await c.call('GET', '/v1/library/saved')).json();
+    expect(saved['apple:a1']).toEqual([col.id]);
+    expect(saved['apple:a3']).toBeUndefined();
+    expect((await client().call('GET', '/v1/library/saved')).json().saved).toEqual({});
   });
 
   it("isolates users: one browser can't see another's collection", async () => {

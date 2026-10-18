@@ -15,8 +15,8 @@ export interface DbHandle {
 }
 
 /**
- * Migrations live in packages/db/drizzle. In the bundled API build they're copied next to
- * main.js, so check both layouts (source: ../drizzle, bundle: ./drizzle).
+ * Migrations live in packages/db/drizzle. Bundled builds copy them next to the entry file,
+ * so check both layouts (source: ../drizzle, bundle: ./drizzle).
  */
 function defaultMigrationsDir(): string {
   const candidates = [new URL('../drizzle', import.meta.url), new URL('./drizzle', import.meta.url)].map(
@@ -27,25 +27,37 @@ function defaultMigrationsDir(): string {
   return found;
 }
 
-/**
- * - DATABASE_URL set → real Postgres (production).
- * - Otherwise → PGlite (embedded Postgres) at `dataDir`, or in memory when dataDir is "memory".
- * Migrations run on open in both cases.
- */
-export async function openDb(opts: {
+export interface OpenDbOptions {
   url?: string;
   dataDir?: string;
   migrationsDir?: string;
-}): Promise<DbHandle> {
-  const migrationsFolder = opts.migrationsDir ?? process.env.MIGRATIONS_DIR ?? defaultMigrationsDir();
+  /** Default true. Serverless deployments migrate at build time instead of on every cold start. */
+  migrate?: boolean;
+  /** Postgres pool size. Keep small on serverless: instances × pool must stay under the DB's limit. */
+  maxConnections?: number;
+}
+
+/**
+ * - `url` set → real Postgres (production; use the provider's pooled connection string on serverless).
+ * - Otherwise → PGlite (embedded Postgres) at `dataDir`, or in memory when dataDir is "memory".
+ */
+export async function openDb(opts: OpenDbOptions): Promise<DbHandle> {
+  const shouldMigrate = opts.migrate ?? true;
+  const migrationsFolder = () => opts.migrationsDir ?? process.env.MIGRATIONS_DIR ?? defaultMigrationsDir();
 
   if (opts.url) {
     const { default: postgres } = await import('postgres');
     const { drizzle } = await import('drizzle-orm/postgres-js');
     const { migrate } = await import('drizzle-orm/postgres-js/migrator');
-    const sqlClient = postgres(opts.url, { max: 10, idle_timeout: 30, connect_timeout: 10, prepare: true });
+    const sqlClient = postgres(opts.url, {
+      max: opts.maxConnections ?? 10,
+      idle_timeout: 20,
+      connect_timeout: 10,
+      // Transaction-mode poolers (Neon/Supabase "pooled" URLs) don't support prepared statements.
+      prepare: false,
+    });
     const db = drizzle(sqlClient, { schema });
-    await migrate(db, { migrationsFolder });
+    if (shouldMigrate) await migrate(db, { migrationsFolder: migrationsFolder() });
     return {
       db: db as unknown as Db,
       driver: 'postgres',
@@ -63,7 +75,7 @@ export async function openDb(opts: {
   if (dir) mkdirSync(dir, { recursive: true });
   const client = new PGlite(dir);
   const db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder });
+  if (shouldMigrate) await migrate(db, { migrationsFolder: migrationsFolder() });
   return {
     db: db as unknown as Db,
     driver: 'pglite',

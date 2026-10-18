@@ -23,7 +23,11 @@ export {
   type ExportItemRow,
 } from './repos/exports.js';
 
+export { discoverRepo, encodeCursor, decodeCursor, type CatalogShowRow } from './repos/discover.js';
+export { TOPICS, CURATED_SHOWS, type TopicId } from './catalog-seed.js';
+
 import type { Db } from './client.js';
+import { discoverRepo } from './repos/discover.js';
 import { accountsRepo, oauthStatesRepo, usersRepo } from './repos/accounts.js';
 import { episodesRepo, matchesRepo } from './repos/catalog.js';
 import { collectionsRepo } from './repos/collections.js';
@@ -38,6 +42,7 @@ export function createRepos(db: Db) {
     matches: matchesRepo(db),
     collections: collectionsRepo(db),
     exports: exportsRepo(db),
+    discover: discoverRepo(db),
   };
 }
 export type Repos = ReturnType<typeof createRepos>;

@@ -3,3 +3,6 @@ prototype/
 .data/
 dist/
 package-lock.json
+.next/
+.vercel/
+next-env.d.ts

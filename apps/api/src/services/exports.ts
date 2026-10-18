@@ -27,12 +27,17 @@ import {
   type PlaylistDestination,
 } from '@tangent/providers';
 import type { Config } from '../config.js';
-import type { JobQueue } from '../jobs/queue.js';
+import type { JobRunner } from '../jobs/runner.js';
 import type { ConnectionService } from './connections.js';
 import { exportDto } from './dto.js';
 import type { ProviderRegistry } from './registry.js';
 
 const MATCH_CONCURRENCY = 3;
+/**
+ * How long a worker owns a job without renewing. Shorter than the serverless max duration, and
+ * renewed after every batch, so a worker that dies is replaced within about this long.
+ */
+const LEASE_MS = 2 * 60_000;
 /** Persist progress after each batch so a crash loses at most one batch of state. */
 const PERSIST_BATCH = 10;
 
@@ -88,7 +93,7 @@ export class ExportService {
     private readonly repos: Repos,
     private readonly registry: ProviderRegistry,
     private readonly connections: ConnectionService,
-    private readonly queue: JobQueue,
+    private readonly queue: JobRunner,
     private readonly logger: Logger,
     private readonly now: () => Date = () => new Date(),
   ) {}
@@ -122,8 +127,21 @@ export class ExportService {
     return { job: await this.view(job), created };
   }
 
+  /**
+   * Clients poll this while a job is in progress. Polling doubles as the recovery mechanism on
+   * serverless: if the worker stopped (its lease expired), the poll restarts it.
+   */
   async get(userId: string, jobId: string) {
-    return this.view(await this.owned(userId, jobId));
+    const job = await this.owned(userId, jobId);
+    this.kickIfStalled(job);
+    return this.view(job);
+  }
+
+  private kickIfStalled(job: ExportJobRow): void {
+    if (job.status !== 'planning' && job.status !== 'running') return;
+    if (job.leaseUntil && job.leaseUntil.getTime() > this.now().getTime()) return;
+    if (job.status === 'planning') this.queue.enqueue(`plan:${job.id}`, () => this.plan(job.id));
+    else this.queue.enqueue(`run:${job.id}`, () => this.run(job.id));
   }
 
   async decide(
@@ -210,14 +228,28 @@ export class ExportService {
     return this.view(moved);
   }
 
-  /** Re-enqueue work interrupted by a restart. Running exports reconcile before adding, so nothing is added twice. */
+  /**
+   * Re-enqueue work whose worker stopped (restart, deploy, serverless timeout). Called on boot
+   * and by the cron tick. Running exports reconcile before adding, so nothing is added twice.
+   */
   async resumeInterrupted(): Promise<number> {
-    const jobs = await this.repos.exports.listByStatus(['planning', 'running']);
-    for (const j of jobs) {
-      if (j.status === 'planning') this.queue.enqueue(`plan:${j.id}`, () => this.plan(j.id));
-      else this.queue.enqueue(`run:${j.id}`, () => this.run(j.id));
-    }
+    const jobs = await this.repos.exports.listResumable(this.now());
+    for (const j of jobs) this.kickIfStalled(j);
     return jobs.length;
+  }
+
+  /** Run `fn` only if we can take the job's lease; always release it afterwards. */
+  private async withLease(
+    jobId: string,
+    fn: (heartbeat: () => Promise<void>) => Promise<void>,
+  ): Promise<void> {
+    if (!(await this.repos.exports.claim(jobId, this.now(), LEASE_MS))) return; // another worker has it
+    const heartbeat = () => this.repos.exports.extendLease(jobId, this.now(), LEASE_MS);
+    try {
+      await fn(heartbeat);
+    } finally {
+      await this.repos.exports.releaseLease(jobId).catch(() => {});
+    }
   }
 
   // ======================================================================= internals
@@ -257,6 +289,10 @@ export class ExportService {
 
   /** Match every collection item onto the destination, then build the plan. */
   async plan(jobId: string): Promise<void> {
+    await this.withLease(jobId, (heartbeat) => this.planLeased(jobId, heartbeat));
+  }
+
+  private async planLeased(jobId: string, heartbeat: () => Promise<void>): Promise<void> {
     const job = await this.repos.exports.getById(jobId);
     if (!job || job.status !== 'planning') return;
     const log = this.logger.child?.({ jobId, destination: job.destination }) ?? this.logger;
@@ -290,9 +326,12 @@ export class ExportService {
         }
       }
 
-      const matches = await mapLimit(rows, MATCH_CONCURRENCY, async ({ episode }) =>
-        this.matchOne(episode, job.destination, catalog, maxAge),
-      );
+      let matched = 0;
+      const matches = await mapLimit(rows, MATCH_CONCURRENCY, async ({ episode }) => {
+        const m = await this.matchOne(episode, job.destination, catalog, maxAge);
+        if (++matched % 5 === 0) await heartbeat();
+        return m;
+      });
       const groups = findDuplicateGroups(
         rows.map(({ item, episode }) => ({ id: item.id, candidate: episodeToCandidate(episode) })),
       );
@@ -335,6 +374,10 @@ export class ExportService {
 
   /** Add approved items to the destination playlist. Never throws; all outcomes are persisted. */
   async run(jobId: string): Promise<void> {
+    await this.withLease(jobId, (heartbeat) => this.runLeased(jobId, heartbeat));
+  }
+
+  private async runLeased(jobId: string, heartbeat: () => Promise<void>): Promise<void> {
     const job = await this.repos.exports.getById(jobId);
     if (!job || job.status !== 'running') return;
     const log = this.logger.child?.({ jobId, destination: job.destination }) ?? this.logger;
@@ -399,6 +442,7 @@ export class ExportService {
 
       const queue = itemsToAdd(items);
       for (let start = 0; start < queue.length; start += PERSIST_BATCH) {
+        await heartbeat();
         const batch: Array<{ item: PlanItem; ref: ProviderRef }> = [];
         for (const item of queue.slice(start, start + PERSIST_BATCH)) {
           const ref = item.match.candidate?.ref;

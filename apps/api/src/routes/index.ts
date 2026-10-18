@@ -1,6 +1,8 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Config } from '../config.js';
 import type { ConnectionService } from '../services/connections.js';
+import type { DiscoverService } from '../services/discover.js';
 import type { ExportService } from '../services/exports.js';
 import type { LibraryService } from '../services/library.js';
 import type { ProviderRegistry } from '../services/registry.js';
@@ -12,6 +14,7 @@ export interface RouteDeps {
   library: LibraryService;
   connections: ConnectionService;
   exports: ExportService;
+  discover: DiscoverService;
   registry: ProviderRegistry;
   ping: () => Promise<void>;
 }
@@ -28,6 +31,20 @@ export function registerRoutes(app: FastifyInstance, d: RouteDeps): void {
     }
   });
 
+  // ---------------------------------------------------------------- cron (Vercel Cron / scheduler)
+  // Refreshes the catalog and resumes stalled exports. Vercel sends `Authorization: Bearer <CRON_SECRET>`.
+  app.get('/internal/cron', { config: { rateLimit: false } }, async (req, reply) => {
+    const secret = d.config.CRON_SECRET;
+    const given = Buffer.from(req.headers.authorization ?? '');
+    const expected = Buffer.from(`Bearer ${secret ?? ''}`);
+    if (!secret || given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      return reply.status(404).send({ error: { code: 'not_found', message: 'Not found', retryable: false } });
+    }
+    const resumed = await d.exports.resumeInterrupted();
+    const catalog = await d.discover.refresh(200_000);
+    return { ok: true, resumed, catalog };
+  });
+
   // ---------------------------------------------------------------- platforms
   app.get('/v1/providers', async () => ({
     providers: d.registry.capabilities(),
@@ -39,6 +56,17 @@ export function registerRoutes(app: FastifyInstance, d: RouteDeps): void {
     const q = s.searchQuery.parse(req.query);
     return { query: q.q, results: await d.library.search(q.q, q.platforms, q.limit) };
   });
+
+  app.get('/v1/discover/feed', async (req) => {
+    const q = s.feedQuery.parse(req.query);
+    return d.discover.feed(q.topic ?? null, q.cursor ?? null, q.limit);
+  });
+
+  app.get('/v1/discover/trending', async (req) =>
+    d.discover.trending(s.trendingQuery.parse(req.query).limit),
+  );
+
+  app.get('/v1/topics', async () => d.discover.topics());
 
   app.post('/v1/episodes/resolve', async (req, reply) => {
     const ref = s.episodeRef.parse(req.body);
@@ -55,6 +83,8 @@ export function registerRoutes(app: FastifyInstance, d: RouteDeps): void {
   app.get('/v1/episodes/:id', async (req) => d.library.getEpisode(s.idParam.parse(req.params).id));
 
   // ---------------------------------------------------------------- collections
+  app.get('/v1/library/saved', async (req) => d.library.saved(req.userId));
+
   app.get('/v1/collections', async (req) => ({ collections: await d.library.listCollections(req.userId) }));
 
   app.post('/v1/collections', async (req, reply) =>

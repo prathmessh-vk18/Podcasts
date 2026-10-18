@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   index,
   integer,
@@ -122,6 +123,8 @@ export const episodes = pgTable(
   },
   (t) => [
     uniqueIndex('episodes_source').on(t.sourcePlatform, t.sourceEpisodeId),
+    index('episodes_topic_tags').using('gin', t.topicTags),
+    index('episodes_published').on(t.publishedAt),
     oneOf('episodes_platform_chk', t.sourcePlatform, PLATFORMS),
     check('episodes_duration_chk', sql`duration_sec is null or duration_sec > 0`),
   ],
@@ -208,6 +211,12 @@ export const exportJobs = pgTable(
     error: jsonb('error').$type<ExportItemError | null>(),
     /** Incremented on every status change; used for compare-and-set transitions. */
     version: integer('version').notNull().default(0),
+    /**
+     * Worker lease. A worker owns the job until this time and extends it while working.
+     * If a worker dies (serverless timeout, deploy, crash) the lease expires and any instance
+     * may resume the job. Null means nobody is working on it.
+     */
+    leaseUntil: ts('lease_until'),
     startedAt: ts('started_at'),
     finishedAt: ts('finished_at'),
     createdAt: created(),
@@ -269,4 +278,27 @@ export const quotaUsage = pgTable(
     used: integer('used').notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.key, t.day] }), check('quota_usage_used_chk', sql`used >= 0`)],
+);
+
+/** Shows that feed Discover. Curated by us (see catalog-seed.ts); episodes come from Apple. */
+export const catalogShows = pgTable(
+  'catalog_shows',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    platform: text('platform').$type<Platform>().notNull().default('apple'),
+    sourceShowId: text('source_show_id').notNull(),
+    title: text('title').notNull(),
+    topic: text('topic').notNull(),
+    artworkUrl: text('artwork_url'),
+    active: boolean('active').notNull().default(true),
+    lastRefreshedAt: ts('last_refreshed_at'),
+    lastError: text('last_error'),
+    createdAt: created(),
+    updatedAt: updated(),
+  },
+  (t) => [
+    uniqueIndex('catalog_shows_source').on(t.platform, t.sourceShowId),
+    index('catalog_shows_topic').on(t.topic),
+    oneOf('catalog_shows_platform_chk', t.platform, PLATFORMS),
+  ],
 );

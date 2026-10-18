@@ -41,6 +41,11 @@ export class FakeCatalog implements CatalogProvider {
   async getEpisode(id: string): Promise<EpisodeCandidate | null> {
     return this.episodes.get(id) ?? null;
   }
+  showCalls = 0;
+  async getShowEpisodes(showId: string, limit = 25): Promise<EpisodeCandidate[]> {
+    this.showCalls++;
+    return [...this.episodes.values()].filter((e) => e.showRef?.id === showId).slice(0, limit);
+  }
   async findCandidates(source: EpisodeCandidate): Promise<EpisodeCandidate[]> {
     this.findCalls++;
     return this.candidates.get(source.ref.id) ?? [];

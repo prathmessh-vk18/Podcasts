@@ -6,12 +6,13 @@ import rateLimit from '@fastify/rate-limit';
 import { createRepos, type DbHandle } from '@tangent/db';
 import type { Logger } from '@tangent/providers';
 import type { Config } from './config.js';
-import { JobQueue } from './jobs/queue.js';
+import { createRunner, type JobRunner } from './jobs/runner.js';
 import { TokenCipher } from './lib/crypto.js';
 import { errorHandler } from './lib/errors.js';
 import { registerSession } from './lib/session.js';
 import { registerRoutes } from './routes/index.js';
 import { ConnectionService } from './services/connections.js';
+import { DiscoverService, type ShowSource } from './services/discover.js';
 import { ExportService } from './services/exports.js';
 import { LibraryService } from './services/library.js';
 import { ProviderRegistry } from './services/registry.js';
@@ -21,6 +22,12 @@ export interface AppDeps {
   db: DbHandle;
   /** Override providers (tests inject fakes). Defaults to config-driven real providers. */
   registry?: ProviderRegistry;
+  /** Source of curated show episodes for Discover. Defaults to the Apple provider. */
+  showSource?: ShowSource;
+  /** Override where background jobs run (tests). Defaults from config.runtime. */
+  runner?: JobRunner;
+  /** Delay between shows during catalog refresh (0 in tests). */
+  catalogPacingMs?: number;
   now?: () => Date;
   logger?: boolean | object;
 }
@@ -32,7 +39,7 @@ function redactUrl(url: string): string {
 
 export async function buildApp(
   deps: AppDeps,
-): Promise<{ app: FastifyInstance; exports: ExportService; queue: JobQueue }> {
+): Promise<{ app: FastifyInstance; exports: ExportService; discover: DiscoverService; queue: JobRunner }> {
   const { config, db } = deps;
   const app = Fastify({
     logger: deps.logger ?? {
@@ -48,7 +55,7 @@ export async function buildApp(
           url: redactUrl(req.url),
         }),
       },
-      ...(config.isProd
+      ...(config.isProd || config.runtime === 'serverless'
         ? {}
         : { transport: { target: 'pino-pretty', options: { singleLine: true, translateTime: 'HH:MM:ss' } } }),
     },
@@ -63,10 +70,12 @@ export async function buildApp(
   const repos = createRepos(db.db);
   const registry = deps.registry ?? ProviderRegistry.fromConfig(config, db.db, log);
   const cipher = new TokenCipher(config.encryptionKeys.current, config.encryptionKeys.old);
-  const queue = new JobQueue(config.JOB_CONCURRENCY, log);
+  const queue = deps.runner ?? (await createRunner(config.runtime, config.JOB_CONCURRENCY, log));
   const connections = new ConnectionService(config, repos, registry, cipher, log, now);
   const library = new LibraryService(repos, registry, log, now);
   const exports = new ExportService(config, repos, registry, connections, queue, log, now);
+  const showSource = deps.showSource ?? registry.showSource();
+  const discover = new DiscoverService(repos, showSource, queue, log, now, deps.catalogPacingMs);
 
   await app.register(helmet, {
     contentSecurityPolicy: false,
@@ -108,11 +117,11 @@ export async function buildApp(
   );
 
   registerSession(app, repos, { secure: config.isProd });
-  registerRoutes(app, { config, library, connections, exports, registry, ping: db.ping });
+  registerRoutes(app, { config, library, connections, exports, discover, registry, ping: db.ping });
 
   app.addHook('onClose', async () => {
     await queue.close();
   });
 
-  return { app, exports, queue };
+  return { app, exports, discover, queue };
 }

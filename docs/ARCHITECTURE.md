@@ -13,7 +13,8 @@ packages/providers   One adapter per platform behind three interfaces:
                        PlaylistDestination  createPlaylist, addItems, listItemIds
                      Plus a shared HTTP client, rate limiter, quota budget and RSS parser.
 packages/db          Postgres schema (Drizzle), migrations, repositories.
-apps/api             Fastify HTTP API, services, background job queue.
+apps/api             Fastify HTTP API, services, background job runner, Discover catalog.
+apps/web             Next.js web app. Talks only to /api/* on its own origin (proxied to the API).
 ```
 
 Dependencies only point downwards: `api → db, providers → core`. `core` has no dependencies, so the matching and planning rules are tested without a network or database.
@@ -58,7 +59,25 @@ planning → needs_review ⇄ ready → running → completed
 any state except running/completed → cancelled
 ```
 
-Planning and running happen in a background queue. API calls return `202` straight away and clients poll `GET /v1/exports/:id`.
+Planning and running happen in the background. API calls return `202` straight away and clients poll `GET /v1/exports/:id`.
+
+### Background work on servers and on serverless
+
+`apps/api/src/jobs/runner.ts` picks where work runs: a bounded in-process queue on a normal server, or Vercel's `waitUntil` on serverless (the work continues after the response, up to the function's max duration).
+
+Either way, **a job's state lives in Postgres and is protected by a lease** (`export_jobs.lease_until`):
+
+- A worker claims the lease atomically before touching a job and renews it after each batch.
+- If the worker dies (timeout, deploy, crash), the lease expires and **the next status poll or cron tick resumes the job**.
+- Two instances can never process the same job at once.
+
+## Discover catalog
+
+Discover is fed by a hand-curated list of shows (`packages/db/src/catalog-seed.ts`, PRD §14 "curated seed catalog"). Their episodes come from Apple and are tagged with the show's topic.
+
+- The feed is keyset-paginated (`/v1/discover/feed?topic=&cursor=`), so infinite scroll stays fast at any size.
+- Refresh is stale-while-revalidate. Visits trigger a background refresh of stale shows (at most every 10 minutes per instance), paced to leave Apple's ~20 requests/minute for visitors' searches. There's also a daily cron, and a 30-minute interval on long-running servers.
+- An empty database warms itself on the first visit; the feed returns `warming: true` until episodes arrive.
 
 ### Edge cases handled
 
@@ -129,8 +148,9 @@ All `/v1` routes use the session cookie. Writes need `x-tangent-csrf: 1`.
 | POST             | `/v1/exports/:id/retry`                                | Partial or failed jobs                                                                        |
 | POST             | `/v1/exports/:id/cancel`                               |                                                                                               |
 
-## Scaling notes (when we outgrow one instance)
+## Scaling notes
 
-- `JobQueue` is in-process; job state is durable in Postgres. For several workers, swap it for a Postgres-backed queue (e.g. pg-boss). The interface is two methods.
-- The YouTube quota is already shared through `quota_usage`.
-- The per-account refresh lock is in-process. With several instances, add a row lock (`SELECT … FOR UPDATE` on the account) around refresh.
+- **Already multi-instance safe:** job leases, the YouTube quota (`quota_usage`), idempotency keys, and compare-and-set job transitions.
+- **Rate limits** are per instance (in memory). Move them to Redis (e.g. Upstash) when abuse becomes a concern.
+- **Token refresh** de-duplicates per instance. Two instances may refresh the same account at once, which providers tolerate. Add a row lock if that changes.
+- **Very large exports** (hundreds of YouTube items) outlast one serverless invocation; leases make that safe (the next poll continues), but a dedicated worker or queue service would be smoother.

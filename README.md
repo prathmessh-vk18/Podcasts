@@ -1,42 +1,45 @@
 # Tangent
 
-Cross-platform podcast discovery and learning library: find episodes on any service, organise them into collections, and export those collections to a supported listening app.
+Cross-platform podcast discovery and learning library: find episodes on any service, organise them into collections, and export those collections to the app you listen in.
 
-This repository has two parts:
+## Repository
 
-| Path                     | What it is                                                                                                |
-| ------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `apps/api`, `packages/*` | **The production backend (step 1).** Real provider integrations, matching, account connection and export. |
-| `prototype/`             | The clickable design prototype. Static HTML: open `prototype/index.html`.                                 |
+| Path                 | What it is                                                               |
+| -------------------- | ------------------------------------------------------------------------ |
+| `apps/web`           | Next.js web app (what users see)                                         |
+| `apps/api`           | Fastify API: providers, matching, OAuth, exports, Discover catalog       |
+| `packages/core`      | Pure domain logic: matching engine, export rules, episode model          |
+| `packages/providers` | Apple, Spotify, YouTube and RSS adapters                                 |
+| `packages/db`        | Postgres schema, migrations and data access (Drizzle)                    |
+| `prototype/`         | The original design prototype (static, for reference only; not deployed) |
 
-## Quick start
+## Run locally
 
-Requires Node.js 22.12 or later. No database or Docker needed locally: the API uses embedded Postgres (PGlite) when `DATABASE_URL` is empty.
+Requires Node.js 22.12 or later. No database needed: the API uses embedded Postgres (PGlite) when `DATABASE_URL` is empty.
 
 ```bash
 npm install
-cp .env.example .env      # optional: add Spotify / YouTube credentials to enable them
-npm run dev               # API on http://localhost:4000
+cp .env.example .env     # add YouTube / Spotify keys to enable those platforms
+npm run dev              # API on http://127.0.0.1:4000
+npm run dev:web          # web app on http://127.0.0.1:3000 (second terminal)
 ```
 
-Apple Podcasts search works with no credentials. Spotify and YouTube switch on when you add their keys to `.env`; without them, those platforms report `provider_not_configured` and everything else keeps working.
-
-```bash
-curl "http://localhost:4000/v1/search?q=hidden%20brain&platforms=apple"
-```
+Open **http://127.0.0.1:3000**. On the first visit the catalog loads from Apple in the background (about a minute).
 
 ## Scripts
 
-| Command                              | Does                                                        |
-| ------------------------------------ | ----------------------------------------------------------- |
-| `npm run dev`                        | API with reload                                             |
-| `npm test`                           | All tests (unit, adapter, database, API end-to-end)         |
-| `npm run typecheck` / `npm run lint` | Static checks                                               |
-| `npm run check`                      | Typecheck, lint and test (run before pushing)               |
-| `npm run build` then `npm start`     | Production bundle in `apps/api/dist`                        |
-| `npm run db:generate`                | New SQL migration after editing `packages/db/src/schema.ts` |
+| Command                           | Does                                                         |
+| --------------------------------- | ------------------------------------------------------------ |
+| `npm run dev` / `npm run dev:web` | API / web app with reload                                    |
+| `npm test`                        | All tests (domain, adapters, database, API end-to-end)       |
+| `npm run check`                   | Typecheck, lint, format check and tests (run before pushing) |
+| `npm run build`                   | Production builds of the API and web app                     |
+| `npm run db:generate`             | New SQL migration after editing `packages/db/src/schema.ts`  |
+| `npm run db:migrate`              | Apply migrations to `DATABASE_URL`                           |
+| `npm run catalog:refresh`         | Pull fresh episodes for all curated shows now                |
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the system fits together, the edge cases it handles, and the API reference.
-- [docs/PLATFORM_NOTES.md](docs/PLATFORM_NOTES.md): what each platform allows, what we verified, and what's still open.
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): deploying to Vercel, step by step.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the system works, the edge cases it handles, and the API reference.
+- [docs/PLATFORM_NOTES.md](docs/PLATFORM_NOTES.md): what each platform allows and what we verified live.

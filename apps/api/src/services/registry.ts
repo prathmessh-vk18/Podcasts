@@ -86,6 +86,14 @@ export class ProviderRegistry {
     });
   }
 
+  /** Where Discover pulls curated shows' episodes from (Apple). */
+  showSource(): {
+    getShowEpisodes(showId: string, limit?: number): ReturnType<AppleProvider['getShowEpisodes']>;
+  } | null {
+    const apple = this.catalogs.apple as Partial<AppleProvider> | undefined;
+    return apple && typeof apple.getShowEpisodes === 'function' ? (apple as AppleProvider) : null;
+  }
+
   catalog(platform: Platform): CatalogProvider {
     const p = this.catalogs[platform];
     if (!p) throw this.missing(platform, 'search');
